@@ -212,6 +212,13 @@ func GetGPUInfo() GpuInfo {
 			resp.MinimumMemory = rocmMinimumMemory
 			return resp
 		}
+	} else if VulkanDetected() {
+	    slog.Info("Vulkan Detected!")
+	    resp.Library = "vulkan"
+		resp.DeviceCount = uint32(1)
+		resp.FreeMemory = uint64(3*1024*1024*1024)
+		resp.TotalMemory = uint64(3*1024*1024*1024)
+		return resp
 	}
 	if resp.Library == "" {
 		C.cpu_check_ram(&memInfo)
@@ -254,8 +261,16 @@ func CheckVRAM() (uint64, error) {
 		return uint64(avail), nil
 	}
 	gpuInfo := GetGPUInfo()
-	if gpuInfo.FreeMemory > 0 && (gpuInfo.Library == "cuda" || gpuInfo.Library == "rocm") {
-		return gpuInfo.FreeMemory, nil
+	if gpuInfo.FreeMemory > 0 && (gpuInfo.Library == "cuda" || gpuInfo.Library == "rocm" || gpuInfo.Library == "vulkan") {
+		// leave 10% or 1024MiB of VRAM free per GPU to handle unaccounted for overhead
+		overhead := gpuInfo.FreeMemory / 10
+		gpus := uint64(gpuInfo.DeviceCount)
+		if overhead < gpus*1024*1024*1024 {
+			overhead = gpus * 1024 * 1024 * 1024
+		}
+		avail := int64(gpuInfo.FreeMemory - overhead)
+		slog.Debug(fmt.Sprintf("%s detected %d devices with %dM available memory", gpuInfo.Library, gpuInfo.DeviceCount, avail/1024/1024))
+		return avail, nil
 	}
 
 	return 0, fmt.Errorf("no GPU detected") // TODO - better handling of CPU based memory determiniation
