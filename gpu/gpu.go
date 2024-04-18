@@ -206,7 +206,7 @@ func GetGPUInfo() GpuInfo {
 				slog.Info(fmt.Sprintf("[cudart] CUDA GPU is too old. Falling back to CPU mode. Compute Capability detected: %d.%d", cc.major, cc.minor))
 			}
 		}
-	} else {
+	else {
 		AMDGetGPUInfo(&resp)
 		if resp.Library != "" {
 			resp.MinimumMemory = rocmMinimumMemory
@@ -270,7 +270,7 @@ func CheckVRAM() (uint64, error) {
 		}
 		avail := int64(gpuInfo.FreeMemory - overhead)
 		slog.Debug(fmt.Sprintf("%s detected %d devices with %dM available memory", gpuInfo.Library, gpuInfo.DeviceCount, avail/1024/1024))
-		return avail, nil
+		return uint64(avail), nil
 	}
 
 	return 0, fmt.Errorf("no GPU detected") // TODO - better handling of CPU based memory determiniation
