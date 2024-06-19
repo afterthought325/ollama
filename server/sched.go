@@ -75,11 +75,7 @@ func InitScheduler(ctx context.Context) *Scheduler {
 }
 
 // context must be canceled to decrement ref count and release the runner
-<<<<<<< HEAD
 func (s *Scheduler) GetRunner(c context.Context, model *Model, opts api.Options, sessionDuration *api.Duration) (chan *runnerRef, chan error) {
-=======
-func (s *Scheduler) GetRunner(c context.Context, model *Model, opts api.Options, sessionDuration time.Duration) (chan *runnerRef, chan error) {
->>>>>>> e3ef4be0 (Enable concurrency by default)
 	if opts.NumCtx < 4 {
 		opts.NumCtx = 4
 	}
@@ -114,7 +110,6 @@ func (s *Scheduler) Run(ctx context.Context) {
 }
 
 func (s *Scheduler) processPending(ctx context.Context) {
-	maxRunnerFactor := 1 // number of GPUs or 1
 	for {
 		select {
 		case <-ctx.Done():
@@ -123,13 +118,8 @@ func (s *Scheduler) processPending(ctx context.Context) {
 		case pending := <-s.pendingReqCh:
 			// Block other requests until we get this pending request running
 			pending.schedAttempts++
-<<<<<<< HEAD
 			if pending.origNumCtx == 0 {
 				pending.origNumCtx = pending.opts.NumCtx
-=======
-			if pending.origNumCTX == 0 {
-				pending.origNumCTX = pending.opts.NumCtx
->>>>>>> e3ef4be0 (Enable concurrency by default)
 			}
 
 			if pending.ctx.Err() != nil {
@@ -143,13 +133,6 @@ func (s *Scheduler) processPending(ctx context.Context) {
 				numParallel = 1
 				slog.Warn("multimodal models don't support parallel requests yet")
 			}
-<<<<<<< HEAD
-=======
-			// Keep NumCtx and numParallel in sync
-			if numParallel > 1 {
-				pending.opts.NumCtx = pending.origNumCTX * numParallel
-			}
->>>>>>> e3ef4be0 (Enable concurrency by default)
 
 			for {
 				var runnerToExpire *runnerRef
@@ -165,7 +148,7 @@ func (s *Scheduler) processPending(ctx context.Context) {
 						pending.useLoadedRunner(runner, s.finishedReqCh)
 						break
 					}
-				} else if envconfig.MaxRunners > 0 && loadedCount >= (maxRunnerFactor*envconfig.MaxRunners) {
+				} else if envconfig.MaxRunners > 0 && loadedCount >= envconfig.MaxRunners {
 					slog.Debug("max runners achieved, unloading one to make room", "runner_count", loadedCount)
 					runnerToExpire = s.findRunnerToUnload()
 				} else {
@@ -177,7 +160,26 @@ func (s *Scheduler) processPending(ctx context.Context) {
 					} else {
 						gpus = s.getGpuFn()
 					}
-					maxRunnerFactor = max(len(gpus), 1)
+
+					if envconfig.MaxRunners <= 0 {
+						// No user specified MaxRunners, so figure out what automatic setting to use
+						// If all GPUs have reliable free memory reporting, defaultModelsPerGPU * the number of GPUs
+						// if any GPU has unreliable free memory reporting, 1x the number of GPUs
+						allReliable := true
+						for _, gpu := range gpus {
+							if gpu.UnreliableFreeMemory {
+								allReliable = false
+								break
+							}
+						}
+						if allReliable {
+							envconfig.MaxRunners = defaultModelsPerGPU * len(gpus)
+							slog.Debug("updating default concurrency", "OLLAMA_MAX_LOADED_MODELS", envconfig.MaxRunners, "gpu_count", len(gpus))
+						} else {
+							slog.Info("one or more GPUs detected that are unable to accurately report free memory - disabling default concurrency")
+							envconfig.MaxRunners = len(gpus)
+						}
+					}
 
 					if envconfig.MaxRunners <= 0 {
 						// No user specified MaxRunners, so figure out what automatic setting to use
@@ -211,16 +213,10 @@ func (s *Scheduler) processPending(ctx context.Context) {
 						// simplifying assumption of defaultParallel when in CPU mode
 						if numParallel <= 0 {
 							numParallel = defaultParallel
-<<<<<<< HEAD
 						}
 
 						pending.opts.NumCtx = pending.origNumCtx * numParallel
 
-=======
-							pending.opts.NumCtx = pending.origNumCTX * numParallel
-						}
-
->>>>>>> e3ef4be0 (Enable concurrency by default)
 						if loadedCount == 0 {
 							slog.Debug("cpu mode with first model, loading")
 							s.loadFn(pending, ggml, gpus, numParallel)
@@ -425,13 +421,10 @@ func (s *Scheduler) load(req *LlmRequest, ggml *llm.GGML, gpus gpu.GpuInfoList, 
 	if numParallel < 1 {
 		numParallel = 1
 	}
-<<<<<<< HEAD
 	sessionDuration := envconfig.KeepAlive
 	if req.sessionDuration != nil {
 		sessionDuration = req.sessionDuration.Duration
 	}
-=======
->>>>>>> e3ef4be0 (Enable concurrency by default)
 	llama, err := s.newServerFn(gpus, req.model.ModelPath, ggml, req.model.AdapterPaths, req.model.ProjectorPaths, req.opts, numParallel)
 	if err != nil {
 		// some older models are not compatible with newer versions of llama.cpp
@@ -705,11 +698,7 @@ func pickBestFitGPUs(req *LlmRequest, ggml *llm.GGML, gpus gpu.GpuInfoList, numP
 	var numParallelToTry []int
 	if *numParallel <= 0 {
 		// If no specific parallel setting was provided, try larger then smaller, always end with 1
-<<<<<<< HEAD
 		numParallelToTry = append(numParallelToTry, defaultParallel, 1)
-=======
-		numParallelToTry = append(numParallelToTry, 4, 1)
->>>>>>> e3ef4be0 (Enable concurrency by default)
 	} else {
 		numParallelToTry = []int{*numParallel}
 	}
@@ -725,11 +714,7 @@ func pickBestFitGPUs(req *LlmRequest, ggml *llm.GGML, gpus gpu.GpuInfoList, numP
 
 		// First attempt to fit the model into a single GPU
 		for _, p := range numParallelToTry {
-<<<<<<< HEAD
 			req.opts.NumCtx = req.origNumCtx * p
-=======
-			req.opts.NumCtx = req.origNumCTX * p
->>>>>>> e3ef4be0 (Enable concurrency by default)
 			if !envconfig.SchedSpread {
 				for _, g := range sgl {
 					if ok, estimatedVRAM = llm.PredictServerFit([]gpu.GpuInfo{g}, ggml, req.model.AdapterPaths, req.model.ProjectorPaths, req.opts); ok {
@@ -747,11 +732,7 @@ func pickBestFitGPUs(req *LlmRequest, ggml *llm.GGML, gpus gpu.GpuInfoList, numP
 
 		// Now try all the GPUs
 		for _, p := range numParallelToTry {
-<<<<<<< HEAD
 			req.opts.NumCtx = req.origNumCtx * p
-=======
-			req.opts.NumCtx = req.origNumCTX * p
->>>>>>> e3ef4be0 (Enable concurrency by default)
 			if ok, estimatedVRAM = llm.PredictServerFit(sgl, ggml, req.model.AdapterPaths, req.model.ProjectorPaths, req.opts); ok {
 				slog.Info("new model will fit in available VRAM, loading", "model", req.model.ModelPath, "library", sgl[0].Library, "parallel", p, "required", format.HumanBytes2(estimatedVRAM))
 				*numParallel = p
